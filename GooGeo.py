@@ -71,7 +71,7 @@ def main():
                     row.append('')
                 writer.writerow(row)
                 # Here's the file you get from API Console -> Service Account.
-                f = file('socmint-001-810181225ea6.p12', 'rb')
+                f = file('***.p12', 'rb')
                 key = f.read()
                 f.close()
 
@@ -80,7 +80,7 @@ def main():
                 # is the Email address created for the Service account. It must be the email
                 # address associated with the key that was created.
                 credentials = SignedJwtAssertionCredentials(
-                'googleplaces@socmint-001.iam.gserviceaccount.com',
+                '***@***.iam.gserviceaccount.com',
                 key,
                 scope='https://www.googleapis.com/auth/fusiontables')
                 http = httplib2.Http()
