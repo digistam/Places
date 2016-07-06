@@ -156,7 +156,10 @@ def fill_fusiontable(outfile_path):
 	        # For example, let make SQL query to SELECT ALL from Table with
 	        # id = 1gvB3SedL89vG5r1128nUN5ICyyw7Wio5g1w1mbk
 	  media_body = MediaFileUpload(filename=outfile_path, mimetype="application/octet-stream")
-		print service.table().importRows(tableId='1DT2tM2bsPcAo5TTUoYt8QVR02du8PI0eVCZe3swm', media_body=media_body, encoding="auto-detect", delimiter="|",startLine=1,	isStrict=True).execute()
+		# print service.table().importRows(tableId='1DT2tM2bsPcAo5TTUoYt8QVR02du8PI0eVCZe3swm', media_body=media_body, encoding="auto-detect", delimiter="|",startLine=1,	isStrict=True).execute()
+		# importRows -> add new rows to existing table
+		print service.table().replaceRows(tableId='1DT2tM2bsPcAo5TTUoYt8QVR02du8PI0eVCZe3swm', media_body=media_body, encoding="auto-detect", delimiter="|",startLine=1,	isStrict=True).execute()
+		# replaceRows -> overwrite existing rows in table
 	except ValueError, e:
 		print 'er is iets mis gegaan:',e
 	except errors.HttpError, e:
