@@ -1,0 +1,196 @@
+import requests
+import json
+import csv
+import time
+import datetime
+import urllib2
+import re
+import os
+import os.path
+import httplib2
+import apiclient
+from apiclient.discovery import build
+from oauth2client.service_account import ServiceAccountCredentials
+from apiclient.http import MediaFileUpload
+from apiclient import errors
+
+flights = {}
+num_lines = []
+inbound = [
+"Amsterdam, Amsterdam Schiphol Airport",
+"Rotterdam, Rotterdam The Hague Airport",
+"Eindhoven, Eindhoven Airport",
+"Groningen, Groningen Airport Eelde",
+"Den Helder, Den Helder Airport",
+"Maastricht, Maastricht Aachen Airport",
+"Lelystad, Lelystad Airport",
+"Enschede, Enschede Twenthe Airport",
+"Soesterberg, Soesterberg"
+    ]
+
+def check_tempfile(x):
+    try:
+        if os.path.isfile(x): 
+            os.remove(x)
+        else:
+            print 'file does not exist, proceed ...'
+    except WindowsError, e:
+        print e
+def file_len(x):
+    global num_lines
+    num_lines = sum(1 for line in open(x))
+def get_flights():
+    global flights
+    opener = urllib2.build_opener()
+    opener.addheaders = [('User-agent', 'Mozilla/5.0')]
+    ## bounding box Amsterdam: 52.495611,52.285881,4.571957,5.415844
+    ## bounding box Rotterdam: 52.083219,51.861567,4.068128,4.686109
+    ## bounding box Nederland: 53.620534,51.366979,3.389722,7.223950
+    response = opener.open("https://data.flightradar24.com/zones/fcgi/feed.js?bounds=53.620534,51.366979,3.389722,7.223950")
+    the_page = response.read()
+    theText = the_page.decode()
+    identifiers = re.findall('a.{6}', theText)
+    callsigns = re.findall('"([A-Z0-9]*)",0\]', theText)
+    flights['id'] = identifiers
+    flights['callsigns'] = callsigns
+    for i in range(len(flights['id'])):
+        print flights['id'][i],flights['callsigns'][i]
+def get_flightdata(x,y):
+    global inbound
+    try:
+        url = requests.get("http://lhr.data.fr24.com/_external/planedata_json.1.4.php?f=%s" % x)
+        time.sleep(2)
+        parsed_json = url.json()
+        linestringheader = ['<LineString><coordinates>']
+        linestringfooter = ['</coordinates></LineString>']
+        row = []
+        with open('c://temp//dd.csv', 'a') as csvfile:
+            writer = csv.writer(csvfile, delimiter="|",escapechar=' ',quoting=csv.QUOTE_NONE)
+            current_time_utc = datetime.datetime.utcfromtimestamp(int(time.time()))
+            if parsed_json.has_key('status'):
+                print 'status of %s:' % x,parsed_json['status']
+                if parsed_json['status'] != 'airborne':
+                    print 'skipping this item'
+                else:
+                    print 'adding %s to database' % x
+                    row.append(x)
+                    row.append(y)
+                    row.append(current_time_utc)
+                    if parsed_json.has_key('departure'):
+                        departure_utc = datetime.datetime.utcfromtimestamp(int(parsed_json['departure']))
+                        row.append(departure_utc)
+                    else:
+                        row.append(' ')
+                    if parsed_json.has_key('from_tz_code'):
+                        row.append(parsed_json['from_tz_code'])
+                    else:
+                        row.append(' ')
+                    if parsed_json.has_key('arrival'):
+                        #arrival = datetime.datetime.fromtimestamp(int(parsed_json['arrival'])).strftime('%Y-%m-%d %H:%M:%S')
+                        arrival_utc = datetime.datetime.utcfromtimestamp(int(parsed_json['arrival']))
+                        row.append(arrival_utc)
+                    else:
+                        row.append(' ')
+                    if parsed_json.has_key('to_tz_code'):
+                        row.append(parsed_json['to_tz_code'])
+                    else:
+                        row.append(' ')
+                    if parsed_json.has_key('status'):
+                        row.append(parsed_json['status'])
+                    else:
+                        row.append(' ')
+                    if parsed_json.has_key('from_city'):
+                        row.append(parsed_json['from_city'])
+                    else:
+                        row.append(' ')
+                    if parsed_json.has_key('to_city'):
+                        row.append(parsed_json['to_city'])
+                    else:
+                        row.append(' ')
+                    if parsed_json.has_key('airline'):
+                        row.append(unicode(parsed_json['airline']).encode('utf-8'))
+                    else:
+                        row.append(' ')
+                    if parsed_json.has_key('aircraft'):
+                        row.append(parsed_json['aircraft'])
+                    else:
+                        row.append(' ')
+                    if parsed_json.has_key('image'):
+                        image = parsed_json['image']
+                        image = image.replace('\/','/')
+                        row.append(image)
+                    else:
+                        row.append(' ')
+                    if parsed_json.has_key('flight'):
+                        row.append(parsed_json['flight'])
+                    else:
+                        row.append(' ')
+                    if parsed_json.has_key('trail'):
+                        flightdata = []
+                        for item in parsed_json['trail']:
+                            flightdata.append(item)
+                        lat = flightdata[0::3]
+                        lon = flightdata[1::3]
+                        alt = flightdata[2::3]
+                        trail = []
+                        trail.append(" ".join(map(str, linestringheader)))
+                        for i in range(len(lat)):
+                            trail.append("".join("%s,%s,%s" % (lon[i],lat[i],alt[i])))
+                        trail.append(" ".join(map(str, linestringfooter)))
+                        row.append(" ".join(map(str, trail)))
+                    if parsed_json.has_key('from_city') and parsed_json.has_key('to_city'):
+                        if parsed_json['from_city'] in inbound or parsed_json['to_city'] in inbound:
+                            #print parsed_json['from_city'],parsed_json['to_city']
+                            row.append('red')
+                        else:
+                            #print parsed_json['from_city'],parsed_json['to_city']
+                            row.append('black')
+                    else:
+                        row.append('green')
+                    print row
+                    writer.writerow(row)
+    except ValueError,e:
+        print e,'ValueError while requesting %s:' % x
+        
+def upload_data(x,y):
+    try:
+        global num_lines
+        print 'aantal regels in num_lines:',num_lines
+        if num_lines > int(0):
+            rf = open(x)
+            wf = open(y,"w")
+            for line in rf:
+                newline = line.rstrip('\r\n')
+                wf.write(newline)
+                wf.write('\n')  # remove to leave out line breaks
+            rf.close()
+            wf.close()
+            credentials = ServiceAccountCredentials.from_json_keyfile_name('C://Python27//Scripts//IOT-***.json',
+                scopes="https://www.googleapis.com/auth/fusiontables")
+            http = httplib2.Http()
+            http = credentials.authorize(http)
+            service = build("fusiontables","v2",http=http)
+            media_body = MediaFileUpload(filename=y, mimetype="application/octet-stream")
+            try:
+                print service.table().importRows(
+                                tableId='********',
+                                media_body=media_body,
+                                encoding="auto-detect",
+                                delimiter="|",
+                                startLine=0,
+                                isStrict=True
+                        ).execute()
+            except apiclient.errors.HttpError, e:
+                print e
+        else:
+            print 'file is emtpy, skipping upload ...'
+    except OSError:
+        print 'something has gone wrong with the operating system'
+
+check_tempfile('c://temp//dd.csv')
+get_flights()
+
+for i in range(len(flights['id'])):
+    get_flightdata(flights['id'][i],flights['callsigns'][i])
+
+upload_data('c://temp//dd.csv','c://temp//dd2.csv')
