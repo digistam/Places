@@ -86,7 +86,6 @@ def get_flightdata(x,y):
                     else:
                         row.append(' ')
                     if parsed_json.has_key('arrival'):
-                        #arrival = datetime.datetime.fromtimestamp(int(parsed_json['arrival'])).strftime('%Y-%m-%d %H:%M:%S')
                         arrival_utc = datetime.datetime.utcfromtimestamp(int(parsed_json['arrival']))
                         row.append(arrival_utc)
                     else:
@@ -140,10 +139,8 @@ def get_flightdata(x,y):
                         row.append(" ".join(map(str, trail)))
                     if parsed_json.has_key('from_city') and parsed_json.has_key('to_city'):
                         if parsed_json['from_city'] in inbound or parsed_json['to_city'] in inbound:
-                            #print parsed_json['from_city'],parsed_json['to_city']
                             row.append('red')
                         else:
-                            #print parsed_json['from_city'],parsed_json['to_city']
                             row.append('black')
                     else:
                         row.append('green')
