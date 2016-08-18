@@ -1,0 +1,176 @@
+import requests
+import json
+import csv
+import time
+import datetime
+import urllib2
+import re
+import os
+import os.path
+import httplib2
+import apiclient
+from apiclient.discovery import build
+from oauth2client.service_account import ServiceAccountCredentials
+from apiclient.http import MediaFileUpload
+from apiclient import errors
+
+flights = {}
+callsigns = []
+callsign = ''
+num_lines = []
+inbound = [
+"Amsterdam, Amsterdam Schiphol Airport",
+"Rotterdam, Rotterdam The Hague Airport",
+"Eindhoven, Eindhoven Airport",
+"Groningen, Groningen Airport Eelde",
+"Den Helder, Den Helder Airport",
+"Maastricht, Maastricht Aachen Airport",
+"Lelystad, Lelystad Airport",
+"Enschede, Enschede Twenthe Airport",
+"Soesterberg, Soesterberg"
+    ]
+
+def check_tempfile(x):
+    try:
+        if os.path.isfile(x): 
+            os.remove(x)
+        else:
+            print 'file does not exist, proceed ...'
+    except WindowsError, e:
+        print e
+def file_len(x):
+    global num_lines
+    num_lines = sum(1 for line in open(x))
+
+def get_flights():
+    global flights
+    global callsigns
+    opener = urllib2.build_opener()
+    opener.addheaders = [('User-agent', 'Mozilla/5.0')]
+    ## bounding box Amsterdam: 52.495611,52.285881,4.571957,5.415844
+    ## bounding box Rotterdam: 52.083219,51.861567,4.068128,4.686109
+    ## bounding box Nederland: 53.620534,51.366979,3.389722,7.223950
+    response = opener.open("https://data.flightradar24.com/zones/fcgi/feed.js?bounds=53.620534,51.366979,3.389722,7.223950")
+    the_page = response.read()
+    theText = the_page.decode()
+    identifiers = re.findall('a.{6}', theText)
+    callsigns = re.findall('"([A-Z0-9]*)",0\]', theText)
+    flights['id'] = identifiers
+    flights['callsigns'] = callsigns
+    for i in range(len(flights['id'])):
+        print flights['id'][i],flights['callsigns'][i]
+    
+def get_flightdata(x,y):
+    global inbound
+    global callsign
+    try:
+        opener = urllib2.build_opener()
+        opener.addheaders = [('User-agent', 'Mozilla/5.0')]
+        response = opener.open("http://lhr.data.fr24.com/_external/planedata_json.1.4.php?f=%s" % x)
+        the_page = response.read()
+        theText = the_page.decode()
+        row = []
+        status = re.findall('status\":\"([a-zA-Z0-9-]*)', theText)
+        status = str("".join(status))
+        if status != 'airborne':
+            print status
+            print 'skipping this item'
+        else:
+            print status
+            print 'adding %s to database' % x
+            with open('c://temp//dd.csv', 'a') as csvfile:
+                writer = csv.writer(csvfile, delimiter="|",escapechar=' ',quoting=csv.QUOTE_NONE)
+                row.append(x)
+                callsign = re.findall('callsign\":\"([a-zA-Z0-9]*)', theText)
+                row.append(str("".join(callsign)))
+                current_time_utc = datetime.datetime.utcfromtimestamp(int(time.time()))
+                row.append(current_time_utc)
+                departure_utc = re.findall('\"departure\":([0-9]*),', theText)
+                departure_utc = " ".join(departure_utc)
+                departure_utc = datetime.datetime.utcfromtimestamp(int(departure_utc))
+                row.append(str(departure_utc))
+                from_tz_code = re.findall('from_tz_code\":\"([a-zA-Z0-9]*)', theText)
+                row.append(str("".join(from_tz_code)))
+                arrival_utc = re.findall('\"arrival\":([0-9]*),', theText)
+                arrival_utc = "".join(arrival_utc)
+                arrival_utc = datetime.datetime.utcfromtimestamp(int(arrival_utc))
+                row.append(str(arrival_utc))
+                to_tz_code = re.findall('to_tz_code\":\"([a-zA-Z0-9]*)', theText)
+                row.append(str("".join(to_tz_code)))
+                row.append(status)
+                from_city = re.findall('from_city\":\"([a-zA-Z0-9- ,]*)', theText)
+                row.append(str(" ".join(from_city)))
+                to_city = re.findall('to_city\":\"([a-zA-Z0-9- ,]*)', theText)
+                row.append(str(" ".join(to_city)))
+                airline = re.findall('airline\":\"([a-zA-Z0-9- !]*)', theText)
+                row.append(str("".join(airline)))
+                aircraft = re.findall('aircraft\":\"([a-zA-Z0-9-]*)', theText)
+                row.append(str("".join(aircraft)))
+                image = re.findall('image\":\"([a-zA-Z0-9-\\\///\?=:_\.]*)', theText)
+                image = str("".join(image))
+                image = image.replace('\/','/')
+                row.append(image)
+                flight = re.findall('flight\":\"([a-zA-Z0-9-]*)', theText)
+                row.append(str("".join(flight)))
+                trail = re.findall('trail\":\[([0-9-\.,]*)]', theText)
+                trail = '<LineString><coordinates>%s</coordinates></LineString>' % "".join(trail)
+                trail = str(trail)
+                row.append(trail)
+                if len(str("".join(from_city))) < 1 or len(str("".join(to_city))) < 1:
+                    row.append('green')
+                elif str("".join(from_city)) in inbound or str("".join(to_city)) in inbound:
+                    row.append('red')
+                else:
+                    row.append('black')
+                print row
+                writer.writerow(row)
+        time.sleep(2)
+    except ValueError,e:
+        print e,'ValueError while requesting %s:' % x
+        
+def upload_data(x,y):
+    try:
+        global num_lines
+        print 'aantal regels in num_lines:',num_lines
+        if num_lines > int(0):
+            rf = open(x)
+            wf = open(y,"w")
+            for line in rf:
+                line = line.replace('  ',' ')
+                newline = line.rstrip('\r\n')
+                wf.write(newline)
+                wf.write('\n')  # remove to leave out line breaks
+            rf.close()
+            wf.close()
+            credentials = ServiceAccountCredentials.from_json_keyfile_name('C://Python27//Scripts//I***4.json',
+                scopes="https://www.googleapis.com/auth/fusiontables")
+            http = httplib2.Http()
+            http = credentials.authorize(http)
+            service = build("fusiontables","v2",http=http)
+            media_body = MediaFileUpload(filename=y, mimetype="application/octet-stream")
+            try:
+                print service.table().importRows(
+                                tableId='1M***P',
+                                media_body=media_body,
+                                encoding="auto-detect",
+                                delimiter="|",
+                                startLine=0,
+                                isStrict=True
+                        ).execute()
+            except apiclient.errors.HttpError, e:
+                print e
+        else:
+            print 'file is emtpy, skipping upload ...'
+
+    except OSError:
+        print 'something has gone wrong with the operating system'
+
+check_tempfile('c://temp//dd.csv')
+get_flights()
+
+for i in range(len(flights['id'])):
+    get_flightdata(flights['id'][i],flights['callsigns'][i])
+
+file_len('c://temp//dd.csv')
+    
+upload_data('c://temp//dd.csv','c://temp//dd2.csv')
