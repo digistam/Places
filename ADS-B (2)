@@ -113,9 +113,20 @@ def get_flightdata(x,y):
                 flight = re.findall('flight\":\"([a-zA-Z0-9-]*)', theText)
                 row.append(str("".join(flight)))
                 trail = re.findall('trail\":\[([0-9-\.,]*)]', theText)
-                trail = '<LineString><coordinates>%s</coordinates></LineString>' % "".join(trail)
-                trail = str(trail)
-                row.append(trail)
+                trail = "".join(trail)
+                testtrail = trail.split(',')
+                flightdata = []
+                lat = testtrail[0::3]
+                lon = testtrail[1::3]
+                alt = testtrail[2::3]
+                linestringheader = ['<LineString><coordinates>']
+                linestringfooter = ['</coordinates></LineString>']
+                trail = []
+                trail.append(" ".join(map(str, linestringheader)))
+                for i in range(len(lat)):
+                    trail.append("".join("%s,%s,%s" % (lon[i],lat[i],alt[i])))
+                trail.append(" ".join(map(str, linestringfooter)))
+                row.append(" ".join(map(str, trail)))
                 if len(str("".join(from_city))) < 1 or len(str("".join(to_city))) < 1:
                     row.append('green')
                 elif str("".join(from_city)) in inbound or str("".join(to_city)) in inbound:
