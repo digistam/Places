@@ -1,0 +1,50 @@
+import requests
+import json
+import csv
+import time
+import datetime
+import urllib2
+import re
+import sys
+
+def get_flights():
+    global flights
+    starttime = time.time()
+    while True:
+        opener = urllib2.build_opener()
+        opener.addheaders = [('User-agent', 'Mozilla/5.0')]
+        ## bounding box Amsterdam: 52.495611,52.285881,4.571957,5.415844
+        ## bounding box Rotterdam: 52.083219,51.861567,4.068128,4.686109
+        ## bounding box Nederland: 53.620534,51.366979,3.389722,7.223950
+        ## bounding box Moordrecht: 52.0239917,51.9736984,4.6170973,4.6877788
+        response = opener.open("https://data.flightradar24.com/zones/fcgi/feed.js?bounds=52.0239917,51.9736984,4.6170973,4.6877788")
+        the_page = response.read()
+        theText = the_page.decode()
+        identifiers = re.findall('a.{6}', theText)
+        callsigns = re.findall('"([A-Z0-9]*)",0\]', theText)
+        flights = {}
+        flights['id'] = identifiers
+        flights['callsigns'] = callsigns
+        if len(flights['id']) > 0:
+		        if len(flights['id']) > 0:
+                for i in range(len(flights['id'])):
+                        print 'result:',flights['id'][i],flights['callsigns'][i]
+        else:
+                print 'clear sky above Moordrecht'
+        time.sleep(5)
+        response = opener.open("https://data.flightradar24.com/zones/fcgi/feed.js?callsign=LIFELN")
+        the_page = response.read()
+        theText = the_page.decode()
+        identifiers = re.findall('a.{6}', theText)
+        callsigns = re.findall('"([A-Z0-9]*)",0\]', theText)
+        flights = {}
+        flights['id'] = identifiers
+        flights['callsigns'] = callsigns
+        if len(flights['id']) > 0:
+                for i in range(len(flights['id'])):
+                        print 'result:',flights['id'][i],flights['callsigns'][i]
+        else:
+                print 'No LifeLiners in the air'
+        time.sleep(60.0 - ((time.time() - starttime) % 60.0))
+
+get_flights()
